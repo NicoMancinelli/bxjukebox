@@ -20,9 +20,13 @@ bxjukebox/
 - **🔎 Search** — live-filter the queue by title.
 - **⏭ Autoplay & 🔀 Shuffle** — YouTube tracks auto-advance when they end (YT iframe API over postMessage); both toggles persist across sessions via `localStorage`. Media-less threads are skipped during auto-advance.
 - **💬 BX Reactions** — first ~10 comments from the playing thread, rendered beside the player (HTML-escaped).
+- **⭐ Favorites & 🕘 Recent** — star any playing track (or press `F`); Favs and Recent tabs are persistent playlists stored in your browser (last 50 plays), playable from any page.
+- **▁ Mini-player dock** — minimize the whole player (or press `M`) to a floating now-playing bar with prev/next, and keep browsing Boxden while the music plays; ⤢ expands back.
+- **▶ Play this thread** — on a thread page (`showthread.php`), the launch button queues that thread directly and starts playing its clips.
+- **♾ Endless queue** — when autoplay reaches the end of the queue, the next forum page is loaded automatically and playback continues.
 - **🎧 Jukebox Mode** — audio-only: collapses the video, keeps the track playing.
 - **Pop Out** — Document Picture-in-Picture floating window.
-- **Keyboard**: `N` next · `P` prev · `S` shuffle · `A` audio mode · `Esc` close.
+- **Keyboard**: `N` next · `P` prev · `F` favorite · `M` mini-player · `S` shuffle · `A` audio mode · `Esc` close.
 
 ## Try the demo
 

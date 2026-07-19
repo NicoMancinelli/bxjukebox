@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Boxden Modern Jukebox & Media Player
 // @namespace    https://github.com/neek/bxjukebox
-// @version      1.2.0
+// @version      2.0.0
 // @description  Zero-server media player for Boxden: section playlists, Hot 🔥 props filter, shuffle, autoplay queue, search, BX Reactions drawer, audio-only Jukebox mode, and Picture-in-Picture.
 // @author       Nico
 // @match        https://boxden.com/forumdisplay.php*
@@ -22,7 +22,19 @@
     // ------------------------------------------------------------------
     const MAX_REACTIONS = 10;         // comments shown in the drawer
     const REACTION_MAX_CHARS = 180;
+    const HISTORY_LIMIT = 50;
     const SETTINGS_KEY = 'bxJukeboxSettings';
+    const FAVS_KEY = 'bxJukeboxFavs';
+    const HIST_KEY = 'bxJukeboxHistory';
+
+    function loadStore(key) {
+        try { return JSON.parse(localStorage.getItem(key)) || []; } catch (e) { return []; }
+    }
+    function saveStore(key, list) {
+        try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) { /* private mode */ }
+    }
+    let favs = loadStore(FAVS_KEY);        // [{ title, url, props }]
+    let history = loadStore(HIST_KEY);     // [{ title, url, props, ts }] newest first
 
     const settings = Object.assign(
         { autoplay: true, shuffle: false, hotThreshold: 15 },
@@ -338,6 +350,59 @@
             border-radius: 4px; padding: 1px 6px; font-family: inherit; color: var(--bx-muted);
         }
 
+        /* ---- Now-playing title row + favorite star ------------------- */
+        .bx-title-row {
+            display: flex; align-items: center; gap: 8px; margin-top: 22px;
+            max-width: 860px; min-width: 0;
+        }
+        .bx-title-row #bx-track-title { margin: 0; }
+        #bx-fav-btn {
+            width: 32px; height: 32px; border-radius: 8px; border: none;
+            background: transparent; color: var(--bx-faint); cursor: pointer;
+            font-size: 1.15rem; line-height: 1; flex-shrink: 0; display: none;
+        }
+        #bx-fav-btn:hover { background: var(--bx-card); color: var(--bx-text); }
+        #bx-fav-btn.bx-faved { color: var(--bx-accent); }
+        .bx-row-star { color: var(--bx-accent); font-size: 0.72rem; flex-shrink: 0; }
+
+        /* ---- Mini-player dock ---------------------------------------- */
+        #bx-mini-bar { display: none; }
+        #bx-player-root.bx-mini {
+            inset: auto; width: 0; height: 0; background: transparent;
+        }
+        #bx-player-root.bx-mini .bx-topbar,
+        #bx-player-root.bx-mini .bx-sidebar,
+        #bx-player-root.bx-mini .bx-reactions,
+        #bx-player-root.bx-mini .bx-kbd-hint { display: none; }
+        #bx-player-root.bx-mini .bx-layout { height: 0; }
+        #bx-player-root.bx-mini .bx-main {
+            position: fixed; bottom: 0; right: 0; width: 1px; height: 1px;
+            overflow: hidden; padding: 0;
+        }
+        #bx-player-root.bx-mini #bx-mini-bar {
+            display: flex; position: fixed; bottom: 20px; right: 20px;
+            align-items: center; gap: 10px; width: 360px; max-width: calc(100vw - 40px);
+            background: var(--bx-panel); border: 1px solid var(--bx-border);
+            border-radius: 14px; padding: 12px 14px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.5); z-index: 100001;
+        }
+        #bx-mini-title {
+            flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; font-size: 0.84rem; font-weight: 600;
+        }
+        .bx-mini-btn {
+            width: 30px; height: 30px; border-radius: 8px; border: none;
+            background: transparent; color: var(--bx-muted); cursor: pointer;
+            font-size: 0.85rem; line-height: 1; flex-shrink: 0;
+        }
+        .bx-mini-btn:hover { background: var(--bx-card); color: #fff; }
+        #bx-topbar-mini {
+            width: 34px; height: 34px; border-radius: 8px; border: none;
+            background: transparent; color: var(--bx-muted);
+            font-size: 1rem; cursor: pointer; line-height: 1;
+        }
+        #bx-topbar-mini:hover { background: var(--bx-card); color: #fff; }
+
         @media (max-width: 1100px) {
             .bx-reactions { display: none; }
             .bx-sidebar { width: 270px; }
@@ -356,7 +421,7 @@
     let fullPlaylist = [];    // unfiltered master list for the current source
     let currentIndex = -1;
     let currentMediaIndex = 0; // which clip within the current thread is playing
-    let hotMode = false;
+    let mode = 'all';          // 'all' | 'hot' | 'favs' | 'history'
     let searchQuery = '';
     let nextPageUrl = null;   // pagination cursor for "Load more"
     let loadToken = 0;        // invalidates stale async loads
@@ -490,7 +555,9 @@
     // ------------------------------------------------------------------
     const launchBtn = document.createElement('button');
     launchBtn.id = 'bx-launch-btn';
-    launchBtn.innerHTML = '<span class="bx-logo">▶</span> BX Jukebox';
+    const onThreadPage = !document.querySelector("a[id^='thread_title_']") &&
+        !!document.querySelector('.post_message, [id^="post_message_"]');
+    launchBtn.innerHTML = `<span class="bx-logo">▶</span> ${onThreadPage ? 'Play this thread' : 'BX Jukebox'}`;
     document.body.appendChild(launchBtn);
 
     const playerRoot = document.createElement('div');
@@ -501,6 +568,7 @@
             <select id="bx-section-select" title="Jump to another section without leaving the player" aria-label="Section"></select>
             <span id="bx-count"></span>
             <span class="bx-spacer"></span>
+            <button id="bx-topbar-mini" title="Minimize to mini-player (M)" aria-label="Minimize">▁</button>
             <button class="bx-close-btn" id="bx-close-player" title="Close (Esc)" aria-label="Close">✕</button>
         </div>
         <div class="bx-layout">
@@ -511,8 +579,10 @@
                     <button id="bx-search-clear" title="Clear" aria-label="Clear search">✕</button>
                 </div>
                 <div class="bx-seg" role="group" aria-label="Playlist filter">
-                    <button id="bx-filter-all">All posts</button>
+                    <button id="bx-filter-all">All</button>
                     <button id="bx-filter-hot">🔥 Hot</button>
+                    <button id="bx-filter-favs" title="Your starred tracks">⭐ Favs</button>
+                    <button id="bx-filter-history" title="Recently played">🕘 Recent</button>
                 </div>
                 <ul class="bx-list" id="bx-playlist-ul"></ul>
                 <button id="bx-load-more">Load more threads</button>
@@ -525,7 +595,10 @@
                     <span class="bx-eq"><span></span><span></span><span></span></span>
                     <span>Audio only — track keeps playing while you browse</span>
                 </div>
-                <h2 id="bx-track-title"></h2>
+                <div class="bx-title-row">
+                    <h2 id="bx-track-title"></h2>
+                    <button id="bx-fav-btn" title="Favorite this track (F)" aria-label="Favorite" aria-pressed="false">☆</button>
+                </div>
                 <a id="bx-thread-link" target="_blank" rel="noopener" style="display:none;">View original thread ↗</a>
                 <div id="bx-media-strip" role="tablist" aria-label="Media in this thread"></div>
                 <div class="bx-controls">
@@ -539,7 +612,7 @@
                 </div>
                 <div id="bx-toast" role="status"></div>
                 <div class="bx-kbd-hint">
-                    <kbd>N</kbd> next &nbsp; <kbd>P</kbd> prev &nbsp; <kbd>S</kbd> shuffle &nbsp; <kbd>A</kbd> audio &nbsp; <kbd>Esc</kbd> close
+                    <kbd>N</kbd> next &nbsp; <kbd>P</kbd> prev &nbsp; <kbd>F</kbd> fav &nbsp; <kbd>M</kbd> mini &nbsp; <kbd>S</kbd> shuffle &nbsp; <kbd>A</kbd> audio &nbsp; <kbd>Esc</kbd> close
                 </div>
             </div>
             <div class="bx-reactions">
@@ -548,6 +621,14 @@
                     ${emptyState('💬', 'Play a track to load the chatter')}
                 </div>
             </div>
+        </div>
+        <div id="bx-mini-bar">
+            <span class="bx-eq"><span></span><span></span><span></span></span>
+            <span id="bx-mini-title"></span>
+            <button class="bx-mini-btn" id="bx-mini-prev" title="Previous">◀</button>
+            <button class="bx-mini-btn" id="bx-mini-next" title="Next">▶</button>
+            <button class="bx-mini-btn" id="bx-mini-expand" title="Back to full player">⤢</button>
+            <button class="bx-mini-btn" id="bx-mini-close" title="Stop and close">✕</button>
         </div>
     `;
     document.body.appendChild(playerRoot);
@@ -633,6 +714,20 @@
         if (!url) {
             fullPlaylist = scanDoc(document, location.href);
             nextPageUrl = findNextPageUrl(document, location.href);
+            // Thread-page mode: no thread list but the page itself has posts
+            // (showthread.php) — queue this thread and start playing it.
+            if (fullPlaylist.length === 0 && document.querySelector('.post_message, [id^="post_message_"]')) {
+                fullPlaylist = [{
+                    title: (document.title || 'This thread').replace(/\s*[-|–].*(Boxden|BX).*$/i, '').trim() || 'This thread',
+                    url: location.href,
+                    props: 0,
+                    embeds: extractEmbedsFromThreadDoc(document)
+                }];
+                nextPageUrl = null;
+                applyFilter();
+                if (mode === 'all' || mode === 'hot') loadTrack(0);
+                return;
+            }
             applyFilter();
             return;
         }
@@ -674,6 +769,8 @@
     }
 
     function updateLoadMoreUI() {
+        const paged = mode === 'all' || mode === 'hot';
+        loadMoreBtn.style.display = paged ? '' : 'none';
         loadMoreBtn.disabled = !nextPageUrl;
         loadMoreBtn.textContent = nextPageUrl ? 'Load more threads' : 'End of section';
     }
@@ -683,7 +780,11 @@
         if (keepPlayingUrl === undefined) {
             keepPlayingUrl = currentIndex >= 0 ? (playlist[currentIndex]?.url ?? null) : null;
         }
-        if (hotMode) {
+        if (mode === 'favs') {
+            playlist = favs.map((t) => ({ ...t, embeds: undefined }));
+        } else if (mode === 'history') {
+            playlist = history.map((t) => ({ ...t, embeds: undefined }));
+        } else if (mode === 'hot') {
             playlist = fullPlaylist
                 .filter((t) => t.props >= settings.hotThreshold)
                 .sort((a, b) => b.props - a.props)
@@ -722,6 +823,7 @@
             li.innerHTML = `
                 <span class="bx-idx">${index === currentIndex ? '▶' : index + 1}</span>
                 <span class="bx-track-title-text" title="${escapeHtml(track.title)}">${escapeHtml(track.title)}</span>
+                ${isFaved(track.url) ? '<span class="bx-row-star" title="Favorited">★</span>' : ''}
                 ${track.embeds && track.embeds.length > 1 ? `<span class="bx-clips-badge" title="${track.embeds.length} clips in this thread">${track.embeds.length} clips</span>` : ''}
                 ${track.props > 0 ? `<span class="bx-props-badge" title="${track.props} props">🔥 ${track.props}</span>` : ''}
             `;
@@ -730,14 +832,18 @@
         });
 
         if (playlist.length === 0) {
-            list.innerHTML = emptyState('🕳️', 'No threads found on this page');
+            if (mode === 'favs') list.innerHTML = emptyState('⭐', 'No favorites yet', 'Hit the ☆ next to a playing track to save it');
+            else if (mode === 'history') list.innerHTML = emptyState('🕘', 'Nothing played yet', 'Tracks you play show up here');
+            else list.innerHTML = emptyState('🕳️', 'No threads found on this page');
         } else if (visible === 0) {
             list.insertAdjacentHTML('beforeend', emptyState('🔎', 'No tracks match your search'));
         }
 
         updateCount();
-        document.getElementById('bx-filter-all').classList.toggle('bx-toggled', !hotMode);
-        document.getElementById('bx-filter-hot').classList.toggle('bx-toggled', hotMode);
+        document.getElementById('bx-filter-all').classList.toggle('bx-toggled', mode === 'all');
+        document.getElementById('bx-filter-hot').classList.toggle('bx-toggled', mode === 'hot');
+        document.getElementById('bx-filter-favs').classList.toggle('bx-toggled', mode === 'favs');
+        document.getElementById('bx-filter-history').classList.toggle('bx-toggled', mode === 'history');
     }
 
     function markActive() {
@@ -764,10 +870,12 @@
         markActive();
 
         document.getElementById('bx-track-title').textContent = track.title;
+        document.getElementById('bx-mini-title').textContent = track.title;
         const threadLink = document.getElementById('bx-thread-link');
         threadLink.href = track.url;
         threadLink.style.display = 'inline';
         reactionsContainer.innerHTML = REACTIONS_SKELETON;
+        updateFavButton();
         renderMediaStrip(track);
 
         // If the clips are already known (prefetched), render instantly and
@@ -799,6 +907,7 @@
         if (track.embeds.length > 0) {
             renderMediaStrip(track);
             if (!document.getElementById('bx-iframe-active')) playMedia(0);
+            addHistory(track);
             renderPlaylistUI(); // surface the "N clips" badge
             markActive();
         } else {
@@ -869,6 +978,44 @@
             const doc = new DOMParser().parseFromString(html, 'text/html');
             track.embeds = extractEmbedsFromThreadDoc(doc);
         } catch (e) { /* best effort */ }
+    }
+
+    // ------------------------------------------------------------------
+    // Favorites & history
+    // ------------------------------------------------------------------
+    function isFaved(url) { return favs.some((f) => f.url === url); }
+
+    function toggleFav() {
+        const track = playlist[currentIndex];
+        if (!track) { toast('Play a track first, then star it.'); return; }
+        if (isFaved(track.url)) {
+            favs = favs.filter((f) => f.url !== track.url);
+            toast('Removed from favorites');
+        } else {
+            favs.unshift({ title: track.title, url: track.url, props: track.props || 0 });
+            toast('⭐ Saved to favorites');
+        }
+        saveStore(FAVS_KEY, favs);
+        updateFavButton();
+        if (mode === 'favs') applyFilter();
+        else { renderPlaylistUI(); markActive(); }
+    }
+
+    function updateFavButton() {
+        const track = playlist[currentIndex];
+        const btn = document.getElementById('bx-fav-btn');
+        const on = !!track && isFaved(track.url);
+        btn.style.display = track ? 'inline-flex' : 'none';
+        btn.textContent = on ? '★' : '☆';
+        btn.classList.toggle('bx-faved', on);
+        btn.setAttribute('aria-pressed', String(on));
+    }
+
+    function addHistory(track) {
+        history = history.filter((h) => h.url !== track.url);
+        history.unshift({ title: track.title, url: track.url, props: track.props || 0, ts: Date.now() });
+        if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT;
+        saveStore(HIST_KEY, history);
     }
 
     function renderReactions(doc) {
@@ -946,6 +1093,13 @@
             loadTrack(next, { autoAdvanceOnMiss: auto });
         } else if (currentIndex < playlist.length - 1) {
             loadTrack(currentIndex + 1, { autoAdvanceOnMiss: auto });
+        } else if (nextPageUrl && (mode === 'all' || mode === 'hot')) {
+            // Endless queue: pull the next forum page and keep rolling
+            loadMore().then(() => {
+                if (currentIndex < playlist.length - 1) {
+                    loadTrack(currentIndex + 1, { autoAdvanceOnMiss: auto });
+                }
+            });
         }
     }
     function playPrev() {
@@ -1003,17 +1157,25 @@
         }
     }
 
+    function setMini(on) {
+        playerRoot.classList.toggle('bx-mini', on);
+    }
+
     function openPlayer() {
         playerRoot.style.display = 'block';
+        launchBtn.style.display = 'none';
         renderSectionOptions();
         setChip('bx-shuffle-btn', settings.shuffle);
         setChip('bx-autoplay-btn', settings.autoplay);
+        updateFavButton();
         loadSource(sectionSelect.value || '');
     }
 
     function closePlayer() {
         playerRoot.style.display = 'none';
         playerRoot.classList.remove('bx-audio-mode');
+        setMini(false);
+        launchBtn.style.display = '';
         setChip('bx-audio-btn', false);
         viewport.innerHTML = '<div class="bx-viewport-msg">Pick a track from the queue to start the vibe</div>'; // stops audio
         document.getElementById('bx-track-title').textContent = '';
@@ -1025,8 +1187,16 @@
 
     launchBtn.addEventListener('click', openPlayer);
     document.getElementById('bx-close-player').addEventListener('click', closePlayer);
-    document.getElementById('bx-filter-all').addEventListener('click', () => { hotMode = false; applyFilter(); });
-    document.getElementById('bx-filter-hot').addEventListener('click', () => { hotMode = true; applyFilter(); });
+    document.getElementById('bx-filter-all').addEventListener('click', () => { mode = 'all'; applyFilter(); });
+    document.getElementById('bx-filter-hot').addEventListener('click', () => { mode = 'hot'; applyFilter(); });
+    document.getElementById('bx-filter-favs').addEventListener('click', () => { mode = 'favs'; applyFilter(); });
+    document.getElementById('bx-filter-history').addEventListener('click', () => { mode = 'history'; applyFilter(); });
+    document.getElementById('bx-fav-btn').addEventListener('click', toggleFav);
+    document.getElementById('bx-topbar-mini').addEventListener('click', () => setMini(true));
+    document.getElementById('bx-mini-expand').addEventListener('click', () => setMini(false));
+    document.getElementById('bx-mini-prev').addEventListener('click', playPrev);
+    document.getElementById('bx-mini-next').addEventListener('click', () => playNext(false));
+    document.getElementById('bx-mini-close').addEventListener('click', closePlayer);
     document.getElementById('bx-next-btn').addEventListener('click', () => playNext(false));
     document.getElementById('bx-prev-btn').addEventListener('click', playPrev);
     document.getElementById('bx-shuffle-btn').addEventListener('click', toggleShuffle);
@@ -1058,6 +1228,8 @@
             case 'p': playPrev(); break;
             case 'a': toggleAudioMode(); break;
             case 's': toggleShuffle(); break;
+            case 'f': toggleFav(); break;
+            case 'm': setMini(!playerRoot.classList.contains('bx-mini')); break;
         }
     });
 })();
