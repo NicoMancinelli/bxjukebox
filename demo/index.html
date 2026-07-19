@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>BX Jukebox — Demo (mock Boxden Hip-Hop section)</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #d8dbe0; margin: 0; padding: 24px; color: #222; }
+  .banner { background: #1b1b1f; color: #fff; padding: 14px 18px; border-radius: 8px; margin-bottom: 18px; }
+  .banner strong { color: #ff6a33; }
+  nav a { margin-right: 14px; color: #0645ad; }
+  table { width: 100%; border-collapse: collapse; background: #fff; margin-top: 14px; }
+  td { border-bottom: 1px solid #ddd; padding: 10px 12px; font-size: 14px; }
+  .props { color: #b34700; font-weight: bold; white-space: nowrap; }
+  .pager { margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="banner">
+  <strong>BX Jukebox demo</strong> — this page mimics a Boxden vBulletin section
+  (<code>forumdisplay.php?f=2</code>). The Jukebox overlay auto-opens; close it to see the mock forum underneath.
+</div>
+
+<nav>
+  <a href="forumdisplay.php?f=2">Hip-Hop</a>
+  <a href="forumdisplay.php?f=4">Sports</a>
+  <a href="forumdisplay.php?f=5">News</a>
+</nav>
+
+<table>
+  <tr><td><a id="thread_title_101" href="thread101.html">Nas - new single (official video) 🔥</a></td><td class="props" id="thread_votes_101">Props: 23</td></tr>
+  <tr><td><a id="thread_title_102" href="thread102.html">Benny The Butcher - live set (link inside)</a></td><td class="props" id="thread_votes_102">Props: 8</td></tr>
+  <tr><td><a id="thread_title_103" href="thread103.html">Discussion: greatest 90s album? (no media)</a></td><td class="props" id="thread_votes_103">Props: 40</td></tr>
+  <tr><td><a id="thread_title_104" href="thread104.html">Classic visuals thread - Queen live</a></td><td class="props" id="thread_votes_104">Props: 31</td></tr>
+  <tr><td><a id="thread_title_105" href="thread105.html">This beat switch is CRAZY (streamable)</a></td><td class="props" id="thread_votes_105">Props: 17</td></tr>
+  <tr><td><a id="thread_title_106" href="thread106.html">Throwback: PSY takes over the world</a></td><td class="props" id="thread_votes_106">Props: 12</td></tr>
+</table>
+
+<div class="pager"><a rel="next" href="page2.html">Next Page &gt;</a></div>
+
+<script src="demo-shim.js"></script>
+<script src="../bx-jukebox.user.js"></script>
+<script>
+  // Auto-open the Jukebox so the demo shows the real product immediately.
+  window.addEventListener('load', () => {
+    setTimeout(() => document.getElementById('bx-launch-btn')?.click(), 200);
+  });
+</script>
+</body>
+</html>

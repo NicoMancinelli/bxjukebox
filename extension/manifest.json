@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Boxden Modern Jukebox & Media Player",
+  "version": "1.1.0",
+  "description": "Adds an inline media player, Hot 🔥 Jukebox, autoplay queue, and BX Reactions drawer to Boxden.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://boxden.com/forumdisplay.php*",
+        "https://www.boxden.com/forumdisplay.php*",
+        "https://boxden.com/showthread.php*",
+        "https://www.boxden.com/showthread.php*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "https://boxden.com/*",
+    "https://www.boxden.com/*"
+  ]
+}
