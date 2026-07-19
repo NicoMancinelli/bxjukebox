@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Boxden Modern Jukebox & Media Player
 // @namespace    https://github.com/neek/bxjukebox
-// @version      1.1.0
+// @version      1.2.0
 // @description  Zero-server media player for Boxden: section playlists, Hot 🔥 props filter, shuffle, autoplay queue, search, BX Reactions drawer, audio-only Jukebox mode, and Picture-in-Picture.
 // @author       Nico
 // @match        https://boxden.com/forumdisplay.php*
@@ -37,161 +37,286 @@
     // ------------------------------------------------------------------
     const styles = `
         #bx-player-root {
+            --bx-bg: #0b0b0d;
+            --bx-panel: #131316;
+            --bx-card: #1c1c21;
+            --bx-card-hover: #232329;
+            --bx-border: #26262c;
+            --bx-text: #e9e9ec;
+            --bx-muted: #8d8d96;
+            --bx-faint: #5b5b64;
+            --bx-accent: #ff4500;
+            --bx-accent-soft: rgba(255, 69, 0, 0.12);
             position: fixed; inset: 0;
-            background: rgba(10, 10, 10, 0.98);
+            background: var(--bx-bg);
             z-index: 100000; display: none;
-            color: #e4e4e7;
+            color: var(--bx-text);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 14px; line-height: 1.45;
         }
         #bx-player-root * { box-sizing: border-box; }
-        .bx-layout { display: flex; width: 100%; height: 100%; }
+        #bx-player-root ::-webkit-scrollbar { width: 8px; }
+        #bx-player-root ::-webkit-scrollbar-thumb { background: #2e2e35; border-radius: 4px; }
+        #bx-player-root ::-webkit-scrollbar-thumb:hover { background: #3a3a42; }
+        #bx-player-root button { font-family: inherit; }
+        #bx-player-root button:focus-visible,
+        #bx-player-root input:focus-visible,
+        #bx-player-root select:focus-visible {
+            outline: 2px solid var(--bx-accent); outline-offset: 1px;
+        }
+
+        /* ---- Top bar ---------------------------------------------- */
+        .bx-topbar {
+            height: 58px; display: flex; align-items: center; gap: 16px;
+            padding: 0 20px; background: var(--bx-panel);
+            border-bottom: 1px solid var(--bx-border);
+        }
+        .bx-brand { font-weight: 700; font-size: 1rem; letter-spacing: 0.01em; white-space: nowrap; }
+        .bx-brand .bx-logo { color: var(--bx-accent); margin-right: 6px; }
+        #bx-section-select {
+            background: var(--bx-card); color: var(--bx-text);
+            border: 1px solid var(--bx-border); border-radius: 8px;
+            padding: 7px 10px; font-size: 0.86rem; cursor: pointer; max-width: 220px;
+        }
+        #bx-section-select:hover { border-color: #3a3a42; }
+        #bx-count { color: var(--bx-muted); font-size: 0.8rem; white-space: nowrap; }
+        .bx-spacer { flex: 1; }
+        .bx-close-btn {
+            width: 34px; height: 34px; border-radius: 8px; border: none;
+            background: transparent; color: var(--bx-muted);
+            font-size: 1rem; cursor: pointer; line-height: 1;
+        }
+        .bx-close-btn:hover { background: var(--bx-card); color: #fff; }
+
+        /* ---- Layout ------------------------------------------------ */
+        .bx-layout { display: flex; width: 100%; height: calc(100% - 58px); }
         .bx-sidebar {
-            width: 320px; background: #18181b; border-right: 1px solid #27272a;
-            display: flex; flex-direction: column; padding: 20px; min-width: 0;
+            width: 320px; background: var(--bx-panel); border-right: 1px solid var(--bx-border);
+            display: flex; flex-direction: column; padding: 16px; gap: 10px; min-width: 0;
         }
         .bx-main {
             flex: 1; display: flex; flex-direction: column;
             align-items: center; justify-content: center;
-            padding: 40px; position: relative; min-width: 0;
+            padding: 32px 40px 56px; position: relative; min-width: 0;
         }
         .bx-reactions {
-            width: 320px; background: #18181b; border-left: 1px solid #27272a;
-            display: flex; flex-direction: column; padding: 20px; min-width: 0;
+            width: 320px; background: var(--bx-panel); border-left: 1px solid var(--bx-border);
+            display: flex; flex-direction: column; padding: 16px; gap: 10px; min-width: 0;
         }
+        .bx-panel-label {
+            font-size: 0.68rem; font-weight: 700; letter-spacing: 0.12em;
+            text-transform: uppercase; color: var(--bx-faint); padding: 2px 2px 0;
+            flex-shrink: 0;
+        }
+
+        /* ---- Sidebar controls -------------------------------------- */
+        #bx-search-wrap { position: relative; flex-shrink: 0; }
+        #bx-search {
+            width: 100%; background: var(--bx-card); color: var(--bx-text);
+            border: 1px solid var(--bx-border); border-radius: 8px;
+            padding: 8px 30px 8px 12px; font-size: 0.86rem;
+        }
+        #bx-search::placeholder { color: var(--bx-faint); }
+        #bx-search-clear {
+            position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            width: 24px; height: 24px; border: none; border-radius: 6px;
+            background: transparent; color: var(--bx-muted); cursor: pointer;
+            display: none; font-size: 0.8rem; line-height: 1;
+        }
+        #bx-search-clear:hover { color: #fff; background: var(--bx-card-hover); }
+        .bx-seg {
+            display: flex; background: var(--bx-card); border-radius: 8px;
+            padding: 3px; gap: 3px; flex-shrink: 0; border: 1px solid var(--bx-border);
+        }
+        .bx-seg button {
+            flex: 1; border: none; background: transparent; color: var(--bx-muted);
+            padding: 6px 0; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+            cursor: pointer; transition: background .15s, color .15s;
+        }
+        .bx-seg button:hover { color: var(--bx-text); }
+        .bx-seg button.bx-toggled { background: #2c2c33; color: #fff; }
+
+        /* ---- Playlist ---------------------------------------------- */
+        .bx-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+        .bx-list-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 10px; border-radius: 8px; cursor: pointer;
+            margin-bottom: 2px; font-size: 0.87rem;
+            border-left: 2px solid transparent;
+            transition: background 0.12s;
+        }
+        .bx-list-item:hover { background: var(--bx-card); }
+        .bx-list-item.active {
+            background: var(--bx-accent-soft);
+            border-left-color: var(--bx-accent);
+        }
+        .bx-list-item.bx-no-media { opacity: 0.4; }
+        .bx-idx {
+            width: 18px; flex-shrink: 0; text-align: right;
+            color: var(--bx-faint); font-size: 0.75rem; font-variant-numeric: tabular-nums;
+        }
+        .bx-list-item.active .bx-idx { color: var(--bx-accent); }
+        .bx-track-title-text {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+        }
+        .bx-props-badge {
+            color: var(--bx-muted); font-size: 0.72rem; font-weight: 600;
+            flex-shrink: 0; font-variant-numeric: tabular-nums;
+        }
+        .bx-list-item.active .bx-props-badge { color: var(--bx-accent); }
+        #bx-load-more {
+            flex-shrink: 0; width: 100%;
+            background: transparent; color: var(--bx-muted);
+            border: 1px dashed var(--bx-border);
+            border-radius: 8px; padding: 9px; cursor: pointer; font-size: 0.8rem;
+        }
+        #bx-load-more:hover:not(:disabled) { color: var(--bx-text); border-color: #3a3a42; background: var(--bx-card); }
+        #bx-load-more:disabled { opacity: 0.35; cursor: default; }
+
+        /* ---- Stage -------------------------------------------------- */
         .bx-video-container {
-            width: 100%; max-width: 850px; aspect-ratio: 16/9;
-            background: #000; border-radius: 8px; overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            transition: max-width .25s ease, opacity .25s ease;
+            width: 100%; max-width: 860px; aspect-ratio: 16/9;
+            background: #000; border-radius: 12px; overflow: hidden;
+            border: 1px solid var(--bx-border);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.45);
         }
-        .bx-video-container iframe { width: 100%; height: 100%; border: none; }
+        .bx-video-container iframe { width: 100%; height: 100%; border: none; display: block; }
         #bx-player-root.bx-audio-mode .bx-video-container {
             position: absolute; width: 1px; height: 1px;
             opacity: 0.01; pointer-events: none; bottom: 0; left: 0;
         }
         #bx-audio-badge {
-            display: none; align-items: center; gap: 10px;
-            background: #202023; border: 1px solid #ff4500; border-radius: 10px;
-            padding: 24px 32px; font-size: 1.05rem;
+            display: none; align-items: center; gap: 12px;
+            background: var(--bx-card); border: 1px solid var(--bx-border);
+            border-radius: 12px; padding: 26px 34px; font-size: 0.95rem; color: var(--bx-muted);
         }
         #bx-player-root.bx-audio-mode #bx-audio-badge { display: inline-flex; }
         .bx-eq { display: inline-flex; gap: 3px; align-items: flex-end; height: 20px; }
         .bx-eq span {
-            width: 4px; background: #ff4500; border-radius: 2px;
+            width: 4px; background: var(--bx-accent); border-radius: 2px;
             animation: bx-eq-bounce 1s ease-in-out infinite;
         }
         .bx-eq span:nth-child(2) { animation-delay: .2s; }
         .bx-eq span:nth-child(3) { animation-delay: .4s; }
-        @keyframes bx-eq-bounce {
-            0%, 100% { height: 6px; } 50% { height: 20px; }
-        }
-        .bx-header {
-            font-size: 1.1rem; font-weight: bold; margin-bottom: 12px; color: #fff;
-            border-bottom: 1px solid #27272a; padding-bottom: 10px;
-            display: flex; justify-content: space-between; align-items: center;
-            flex-shrink: 0; gap: 8px;
-        }
-        #bx-count { font-size: 0.75rem; color: #a1a1aa; font-weight: normal; }
-        #bx-section-select {
-            width: 100%; background: #202023; color: #e4e4e7;
-            border: 1px solid #3f3f46; border-radius: 6px;
-            padding: 8px 10px; font-size: 0.85rem; margin-bottom: 10px;
-            flex-shrink: 0; cursor: pointer;
-        }
-        #bx-search {
-            width: 100%; background: #202023; color: #e4e4e7;
-            border: 1px solid #3f3f46; border-radius: 6px;
-            padding: 8px 10px; font-size: 0.85rem; margin-bottom: 10px;
-            flex-shrink: 0;
-        }
-        #bx-search:focus { outline: none; border-color: #ff4500; }
-        .bx-list {
-            list-style: none; padding: 0; margin: 0;
-            overflow-y: auto; flex: 1;
-        }
-        .bx-list::-webkit-scrollbar { width: 8px; }
-        .bx-list::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
-        .bx-list-item {
-            padding: 10px 12px; border-radius: 6px; cursor: pointer;
-            margin-bottom: 6px; background: #202023; font-size: 0.88rem;
-            transition: background 0.15s;
-            display: flex; justify-content: space-between; align-items: center; gap: 8px;
-        }
-        .bx-list-item:hover { background: #27272a; }
-        .bx-list-item.active { background: #ff4500; color: #fff; }
-        .bx-list-item.bx-no-media { opacity: 0.45; }
-        .bx-track-title-text {
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
-        }
-        .bx-props-badge {
-            background: rgba(255, 69, 0, 0.18); color: #ff6a33;
-            padding: 2px 7px; border-radius: 4px; font-size: 0.72rem;
-            font-weight: bold; flex-shrink: 0;
-        }
-        .bx-list-item.active .bx-props-badge { background: rgba(255,255,255,0.3); color: #fff; }
-        #bx-load-more {
-            margin-top: 8px; flex-shrink: 0; width: 100%;
-            background: #202023; color: #a1a1aa; border: 1px dashed #3f3f46;
-            border-radius: 6px; padding: 9px; cursor: pointer; font-size: 0.82rem;
-        }
-        #bx-load-more:hover { color: #fff; border-color: #ff4500; }
-        #bx-load-more:disabled { opacity: 0.4; cursor: default; }
-        .bx-comment-card {
-            background: #202023; padding: 12px; border-radius: 6px;
-            margin-bottom: 10px; font-size: 0.84rem; line-height: 1.45;
-            border-left: 3px solid #ff4500; word-wrap: break-word;
-        }
-        .bx-comment-user { font-weight: bold; color: #fff; margin-bottom: 4px; }
-        .bx-controls { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-        .bx-btn {
-            background: #ff4500; color: #fff; border: none;
-            padding: 10px 16px; border-radius: 6px; cursor: pointer;
-            font-weight: bold; font-size: 0.86rem;
-            display: inline-flex; align-items: center; gap: 7px;
-        }
-        .bx-btn:hover { background: #e03d00; }
-        .bx-btn-secondary { background: #27272a; color: #e4e4e7; }
-        .bx-btn-secondary:hover { background: #3f3f46; }
-        .bx-btn-secondary.bx-toggled { background: #ff4500; color: #fff; }
-        .bx-filter-row { margin-bottom: 10px; display: flex; gap: 8px; flex-shrink: 0; }
-        .bx-filter-row .bx-btn { padding: 6px 12px; font-size: 0.78rem; }
-        .bx-close-btn {
-            position: absolute; top: 18px; right: 22px; z-index: 2;
-            background: none; border: none; color: #a1a1aa;
-            font-size: 1.05rem; font-weight: bold; cursor: pointer;
-        }
-        .bx-close-btn:hover { color: #fff; }
-        .bx-empty { text-align: center; margin-top: 20px; color: #71717a; font-size: 0.88rem; }
-        .bx-viewport-msg {
-            display: flex; height: 100%; align-items: center;
-            justify-content: center; color: #71717a; font-size: 1.05rem;
-            padding: 20px; text-align: center;
-        }
+        @keyframes bx-eq-bounce { 0%, 100% { height: 6px; } 50% { height: 20px; } }
+
         #bx-track-title {
-            margin: 20px 0 0; font-size: 1.2rem; text-align: center;
-            max-width: 850px; overflow: hidden; text-overflow: ellipsis;
+            margin: 22px 0 0; font-size: 1.15rem; font-weight: 600; text-align: center;
+            max-width: 860px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
-        #bx-thread-link { color: #ff6a33; font-size: 0.82rem; margin-top: 8px; text-decoration: none; }
-        #bx-thread-link:hover { text-decoration: underline; }
+        #bx-thread-link {
+            color: var(--bx-muted); font-size: 0.8rem; margin-top: 6px; text-decoration: none;
+        }
+        #bx-thread-link:hover { color: var(--bx-accent); }
+
+        /* ---- Transport + toggles ------------------------------------ */
+        .bx-controls {
+            margin-top: 22px; display: flex; gap: 10px; align-items: center;
+            flex-wrap: wrap; justify-content: center;
+        }
+        .bx-icon-btn {
+            width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--bx-border);
+            background: var(--bx-card); color: var(--bx-text); cursor: pointer;
+            font-size: 1rem; display: inline-flex; align-items: center; justify-content: center;
+            transition: background .15s, transform .1s;
+        }
+        .bx-icon-btn:hover { background: var(--bx-card-hover); }
+        .bx-icon-btn:active { transform: scale(0.94); }
+        .bx-icon-btn.bx-primary {
+            background: var(--bx-accent); border-color: var(--bx-accent); color: #fff;
+            width: 52px; height: 52px; font-size: 1.15rem;
+        }
+        .bx-icon-btn.bx-primary:hover { background: #e03d00; }
+        .bx-controls-divider { width: 1px; height: 28px; background: var(--bx-border); margin: 0 6px; }
+        .bx-chip {
+            border: 1px solid var(--bx-border); background: var(--bx-card); color: var(--bx-muted);
+            border-radius: 999px; padding: 7px 14px 7px 10px; cursor: pointer;
+            font-size: 0.8rem; font-weight: 600;
+            display: inline-flex; align-items: center; gap: 7px;
+            transition: color .15s, border-color .15s, background .15s;
+        }
+        .bx-chip::before {
+            content: ''; width: 7px; height: 7px; border-radius: 50%;
+            background: var(--bx-faint); transition: background .15s;
+        }
+        .bx-chip:hover { color: var(--bx-text); background: var(--bx-card-hover); }
+        .bx-chip.bx-toggled {
+            color: var(--bx-text); border-color: rgba(255, 69, 0, 0.5);
+            background: var(--bx-accent-soft);
+        }
+        .bx-chip.bx-toggled::before { background: var(--bx-accent); }
+        .bx-chip.bx-plain { padding-left: 14px; }
+        .bx-chip.bx-plain::before { display: none; }
+
+        /* ---- Reactions ---------------------------------------------- */
+        .bx-comment-card {
+            background: var(--bx-card); padding: 10px 12px; border-radius: 10px;
+            margin-bottom: 8px; font-size: 0.84rem; line-height: 1.45;
+            word-wrap: break-word; display: flex; gap: 10px; align-items: flex-start;
+        }
+        .bx-avatar {
+            width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+            background: #2c2c33; color: var(--bx-muted);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; font-weight: 700; margin-top: 1px;
+        }
+        .bx-comment-body { min-width: 0; }
+        .bx-comment-user { font-weight: 600; color: var(--bx-text); font-size: 0.8rem; margin-bottom: 2px; }
+        .bx-comment-text { color: var(--bx-muted); }
+
+        /* ---- States: empty / loading -------------------------------- */
+        .bx-empty {
+            text-align: center; margin: 28px 12px; color: var(--bx-faint); font-size: 0.84rem;
+        }
+        .bx-empty .bx-empty-icon { font-size: 1.6rem; display: block; margin-bottom: 8px; opacity: 0.8; }
+        .bx-viewport-msg {
+            display: flex; flex-direction: column; gap: 6px; height: 100%;
+            align-items: center; justify-content: center; color: var(--bx-muted);
+            font-size: 0.95rem; padding: 20px; text-align: center;
+        }
+        .bx-skeleton { position: relative; height: 100%; background: #101013; overflow: hidden; }
+        .bx-skeleton::after {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.05) 50%, transparent 70%);
+            animation: bx-shimmer 1.2s infinite;
+        }
+        .bx-skel-card { border-radius: 10px; height: 52px; margin-bottom: 8px; }
+        @keyframes bx-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+        /* ---- Toast --------------------------------------------------- */
+        #bx-toast {
+            position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%) translateY(8px);
+            background: #232329; color: var(--bx-text); border: 1px solid var(--bx-border);
+            border-radius: 10px; padding: 10px 16px; font-size: 0.84rem; max-width: 460px;
+            opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 5; text-align: center;
+        }
+        #bx-toast.bx-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* ---- Launch button & hints ----------------------------------- */
         #bx-launch-btn {
             position: fixed; bottom: 25px; right: 25px; z-index: 99999;
-            background: #ff4500; color: #fff; border: none; border-radius: 50px;
-            padding: 14px 24px; font-weight: bold; font-size: 0.92rem; cursor: pointer;
-            box-shadow: 0 4px 15px rgba(255, 69, 0, 0.4); transition: transform 0.2s;
+            background: #131316; color: #fff; border: 1px solid #26262c; border-radius: 999px;
+            padding: 12px 20px; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); transition: transform 0.15s, border-color .15s;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: inline-flex; align-items: center; gap: 8px;
         }
-        #bx-launch-btn:hover { transform: scale(1.05); }
+        #bx-launch-btn .bx-logo { color: #ff4500; }
+        #bx-launch-btn:hover { transform: translateY(-1px); border-color: #ff4500; }
         .bx-kbd-hint {
-            position: absolute; bottom: 14px; left: 0; right: 0;
-            text-align: center; color: #52525b; font-size: 0.72rem;
+            position: absolute; bottom: 16px; left: 0; right: 0;
+            text-align: center; color: var(--bx-faint); font-size: 0.72rem;
         }
         .bx-kbd-hint kbd {
-            background: #27272a; border-radius: 3px; padding: 1px 5px;
-            font-family: inherit; color: #a1a1aa;
+            background: var(--bx-card); border: 1px solid var(--bx-border);
+            border-radius: 4px; padding: 1px 6px; font-family: inherit; color: var(--bx-muted);
         }
+
         @media (max-width: 1100px) {
             .bx-reactions { display: none; }
-            .bx-sidebar { width: 260px; }
+            .bx-sidebar { width: 270px; }
+            .bx-main { padding: 20px 24px 56px; }
         }
     `;
 
@@ -240,6 +365,22 @@
         const d = document.createElement('div');
         d.textContent = str;
         return d.innerHTML;
+    }
+
+    function emptyState(icon, line, sub = '') {
+        return `<div class="bx-empty"><span class="bx-empty-icon">${icon}</span>${escapeHtml(line)}${sub ? `<br><span style="font-size:0.76rem;">${escapeHtml(sub)}</span>` : ''}</div>`;
+    }
+
+    const VIEWPORT_SKELETON = '<div class="bx-skeleton"></div>';
+    const REACTIONS_SKELETON = '<div class="bx-skeleton bx-skel-card"></div>'.repeat(3);
+
+    let toastTimer = null;
+    function toast(msg, ms = 3800) {
+        const el = document.getElementById('bx-toast');
+        el.textContent = msg;
+        el.classList.add('bx-show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('bx-show'), ms);
     }
 
     // Turn a raw link or iframe src into a playable embed URL, or null.
@@ -314,51 +455,61 @@
     // ------------------------------------------------------------------
     const launchBtn = document.createElement('button');
     launchBtn.id = 'bx-launch-btn';
-    launchBtn.textContent = '📺 Launch BX Jukebox';
+    launchBtn.innerHTML = '<span class="bx-logo">▶</span> BX Jukebox';
     document.body.appendChild(launchBtn);
 
     const playerRoot = document.createElement('div');
     playerRoot.id = 'bx-player-root';
     playerRoot.innerHTML = `
-        <button class="bx-close-btn" id="bx-close-player" title="Close (Esc)">✕ Close</button>
+        <div class="bx-topbar">
+            <div class="bx-brand"><span class="bx-logo">▶</span>BX Jukebox</div>
+            <select id="bx-section-select" title="Jump to another section without leaving the player" aria-label="Section"></select>
+            <span id="bx-count"></span>
+            <span class="bx-spacer"></span>
+            <button class="bx-close-btn" id="bx-close-player" title="Close (Esc)" aria-label="Close">✕</button>
+        </div>
         <div class="bx-layout">
             <div class="bx-sidebar">
-                <div class="bx-header"><span>🎵 BX Jukebox</span><span id="bx-count"></span></div>
-                <select id="bx-section-select" title="Jump to another section without leaving the player"></select>
-                <input id="bx-search" type="text" placeholder="🔎 Filter tracks…" autocomplete="off">
-                <div class="bx-filter-row">
-                    <button class="bx-btn bx-btn-secondary" id="bx-filter-all">All Posts</button>
-                    <button class="bx-btn bx-btn-secondary" id="bx-filter-hot">🔥 Hot</button>
+                <div class="bx-panel-label">Queue</div>
+                <div id="bx-search-wrap">
+                    <input id="bx-search" type="text" placeholder="Filter tracks…" autocomplete="off" aria-label="Filter tracks">
+                    <button id="bx-search-clear" title="Clear" aria-label="Clear search">✕</button>
+                </div>
+                <div class="bx-seg" role="group" aria-label="Playlist filter">
+                    <button id="bx-filter-all">All posts</button>
+                    <button id="bx-filter-hot">🔥 Hot</button>
                 </div>
                 <ul class="bx-list" id="bx-playlist-ul"></ul>
-                <button id="bx-load-more">⤵ Load more threads</button>
+                <button id="bx-load-more">Load more threads</button>
             </div>
             <div class="bx-main">
                 <div class="bx-video-container" id="bx-player-viewport">
-                    <div class="bx-viewport-msg">Select a track to start the vibe</div>
+                    <div class="bx-viewport-msg">Pick a track from the queue to start the vibe</div>
                 </div>
                 <div id="bx-audio-badge">
                     <span class="bx-eq"><span></span><span></span><span></span></span>
-                    <span>Audio-only Jukebox mode — track keeps playing</span>
+                    <span>Audio only — track keeps playing while you browse</span>
                 </div>
                 <h2 id="bx-track-title"></h2>
-                <a id="bx-thread-link" target="_blank" rel="noopener" style="display:none;">View original Boxden thread ↗</a>
+                <a id="bx-thread-link" target="_blank" rel="noopener" style="display:none;">View original thread ↗</a>
                 <div class="bx-controls">
-                    <button class="bx-btn" id="bx-prev-btn" title="Previous (P)">◀ Prev</button>
-                    <button class="bx-btn" id="bx-next-btn" title="Next (N)">Next ▶</button>
-                    <button class="bx-btn bx-btn-secondary" id="bx-shuffle-btn" title="Shuffle (S)">🔀 Shuffle</button>
-                    <button class="bx-btn bx-btn-secondary" id="bx-autoplay-btn" title="Autoplay next track when one ends">⏭ Autoplay</button>
-                    <button class="bx-btn bx-btn-secondary" id="bx-audio-btn" title="Audio-only (A)">🎧 Jukebox Mode</button>
-                    <button class="bx-btn bx-btn-secondary" id="bx-pip-btn">📺 Pop Out</button>
+                    <button class="bx-icon-btn" id="bx-prev-btn" title="Previous (P)" aria-label="Previous">◀</button>
+                    <button class="bx-icon-btn bx-primary" id="bx-next-btn" title="Next (N)" aria-label="Next">▶</button>
+                    <span class="bx-controls-divider"></span>
+                    <button class="bx-chip" id="bx-autoplay-btn" title="Play the next track automatically when one ends" aria-pressed="false">Autoplay</button>
+                    <button class="bx-chip" id="bx-shuffle-btn" title="Shuffle (S)" aria-pressed="false">Shuffle</button>
+                    <button class="bx-chip" id="bx-audio-btn" title="Hide the video, keep the sound (A)" aria-pressed="false">Audio only</button>
+                    <button class="bx-chip bx-plain" id="bx-pip-btn" title="Float the video in a small window">Pop out</button>
                 </div>
+                <div id="bx-toast" role="status"></div>
                 <div class="bx-kbd-hint">
-                    <kbd>N</kbd> next &nbsp; <kbd>P</kbd> prev &nbsp; <kbd>S</kbd> shuffle &nbsp; <kbd>A</kbd> audio mode &nbsp; <kbd>Esc</kbd> close
+                    <kbd>N</kbd> next &nbsp; <kbd>P</kbd> prev &nbsp; <kbd>S</kbd> shuffle &nbsp; <kbd>A</kbd> audio &nbsp; <kbd>Esc</kbd> close
                 </div>
             </div>
             <div class="bx-reactions">
-                <div class="bx-header"><span>💬 BX Reactions</span></div>
+                <div class="bx-panel-label">BX Reactions</div>
                 <div class="bx-list" id="bx-reactions-container">
-                    <div class="bx-empty">Play a track to load the chatter</div>
+                    ${emptyState('💬', 'Play a track to load the chatter')}
                 </div>
             </div>
         </div>
@@ -369,6 +520,8 @@
     const reactionsContainer = document.getElementById('bx-reactions-container');
     const sectionSelect = document.getElementById('bx-section-select');
     const loadMoreBtn = document.getElementById('bx-load-more');
+    const searchInput = document.getElementById('bx-search');
+    const searchClear = document.getElementById('bx-search-clear');
 
     // ------------------------------------------------------------------
     // Playlist scanning — works on the live page or any fetched document
@@ -433,8 +586,8 @@
 
     function renderSectionOptions() {
         const sections = scanSections();
-        sectionSelect.innerHTML = `<option value="">📄 This page</option>` +
-            sections.map((s) => `<option value="${escapeHtml(s.url)}">📁 ${escapeHtml(s.name)}</option>`).join('');
+        sectionSelect.innerHTML = `<option value="">This page</option>` +
+            sections.map((s) => `<option value="${escapeHtml(s.url)}">${escapeHtml(s.name)}</option>`).join('');
         sectionSelect.style.display = sections.length ? 'block' : 'none';
     }
 
@@ -447,7 +600,7 @@
             applyFilter();
             return;
         }
-        list.innerHTML = '<div class="bx-empty">Loading section…</div>';
+        list.innerHTML = REACTIONS_SKELETON + REACTIONS_SKELETON;
         try {
             const html = await bxFetch(url);
             if (token !== loadToken) return;
@@ -457,7 +610,7 @@
             applyFilter();
         } catch (err) {
             if (token !== loadToken) return;
-            list.innerHTML = `<div class="bx-empty" style="color:#f43f5e;">Failed to load section (${escapeHtml(err.message)}).</div>`;
+            list.innerHTML = emptyState('⚠️', 'Could not load this section', err.message);
         }
     }
 
@@ -477,8 +630,8 @@
             const playingUrl = currentIndex >= 0 ? playlist[currentIndex]?.url : null;
             applyFilter(playingUrl);
         } catch (err) {
-            loadMoreBtn.textContent = `Failed: ${err.message}`;
-            setTimeout(updateLoadMoreUI, 2500);
+            toast(`Couldn't load the next page (${err.message})`);
+            updateLoadMoreUI();
             return;
         }
         updateLoadMoreUI();
@@ -486,10 +639,14 @@
 
     function updateLoadMoreUI() {
         loadMoreBtn.disabled = !nextPageUrl;
-        loadMoreBtn.textContent = nextPageUrl ? '⤵ Load more threads' : 'No more pages';
+        loadMoreBtn.textContent = nextPageUrl ? 'Load more threads' : 'End of section';
     }
 
-    function applyFilter(keepPlayingUrl = null) {
+    function applyFilter(keepPlayingUrl) {
+        // By default keep the currently playing track selected across re-renders
+        if (keepPlayingUrl === undefined) {
+            keepPlayingUrl = currentIndex >= 0 ? (playlist[currentIndex]?.url ?? null) : null;
+        }
         if (hotMode) {
             playlist = fullPlaylist
                 .filter((t) => t.props >= settings.hotThreshold)
@@ -507,6 +664,11 @@
         updateLoadMoreUI();
     }
 
+    function updateCount() {
+        document.getElementById('bx-count').textContent =
+            currentIndex >= 0 ? `Track ${currentIndex + 1} of ${playlist.length}` : `${playlist.length} tracks`;
+    }
+
     function renderPlaylistUI() {
         const list = document.getElementById('bx-playlist-ul');
         list.innerHTML = '';
@@ -522,33 +684,35 @@
             if (q && !track.title.toLowerCase().includes(q)) li.style.display = 'none';
             else visible++;
             li.innerHTML = `
+                <span class="bx-idx">${index === currentIndex ? '▶' : index + 1}</span>
                 <span class="bx-track-title-text" title="${escapeHtml(track.title)}">${escapeHtml(track.title)}</span>
-                ${track.props > 0 ? `<span class="bx-props-badge">${track.props} 🔥</span>` : ''}
+                ${track.props > 0 ? `<span class="bx-props-badge" title="${track.props} props">🔥 ${track.props}</span>` : ''}
             `;
             li.addEventListener('click', () => loadTrack(index));
             list.appendChild(li);
         });
 
         if (playlist.length === 0) {
-            list.innerHTML = '<div class="bx-empty">No threads found on this page.</div>';
+            list.innerHTML = emptyState('🕳️', 'No threads found on this page');
         } else if (visible === 0) {
-            list.insertAdjacentHTML('beforeend', '<div class="bx-empty">No tracks match your search.</div>');
+            list.insertAdjacentHTML('beforeend', emptyState('🔎', 'No tracks match your search'));
         }
 
-        document.getElementById('bx-count').textContent =
-            currentIndex >= 0 ? `${currentIndex + 1} / ${playlist.length}` : `${playlist.length} tracks`;
+        updateCount();
         document.getElementById('bx-filter-all').classList.toggle('bx-toggled', !hotMode);
         document.getElementById('bx-filter-hot').classList.toggle('bx-toggled', hotMode);
     }
 
     function markActive() {
         document.querySelectorAll('#bx-playlist-ul .bx-list-item').forEach((el) => {
-            el.classList.toggle('active', Number(el.dataset.index) === currentIndex);
+            const idx = Number(el.dataset.index);
+            el.classList.toggle('active', idx === currentIndex);
+            const idxEl = el.querySelector('.bx-idx');
+            if (idxEl) idxEl.textContent = idx === currentIndex ? '▶' : idx + 1;
         });
         const activeEl = document.querySelector('#bx-playlist-ul .bx-list-item.active');
         if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
-        document.getElementById('bx-count').textContent =
-            currentIndex >= 0 ? `${currentIndex + 1} / ${playlist.length}` : `${playlist.length} tracks`;
+        updateCount();
     }
 
     // ------------------------------------------------------------------
@@ -565,14 +729,14 @@
         const threadLink = document.getElementById('bx-thread-link');
         threadLink.href = track.url;
         threadLink.style.display = 'inline';
-        reactionsContainer.innerHTML = '<div class="bx-empty">Loading chatter…</div>';
+        reactionsContainer.innerHTML = REACTIONS_SKELETON;
 
         // If the embed is already known (prefetched), render instantly and
         // fetch the thread only for the reactions drawer.
         if (typeof track.embedUrl === 'string') {
             renderEmbed(track.embedUrl);
         } else {
-            viewport.innerHTML = '<div class="bx-viewport-msg">Loading media stream…</div>';
+            viewport.innerHTML = VIEWPORT_SKELETON;
         }
 
         let html;
@@ -581,9 +745,9 @@
         } catch (err) {
             if (token !== loadToken) return;
             if (track.embedUrl === undefined) {
-                viewport.innerHTML = `<div class="bx-viewport-msg" style="color:#f43f5e;">Failed to load thread (${escapeHtml(err.message)}).</div>`;
+                viewport.innerHTML = `<div class="bx-viewport-msg">⚠️ Couldn't load this thread<span style="font-size:0.8rem;color:#5b5b64;">${escapeHtml(err.message)}</span></div>`;
             }
-            reactionsContainer.innerHTML = '<div class="bx-empty">—</div>';
+            reactionsContainer.innerHTML = emptyState('💬', 'Chatter unavailable');
             return;
         }
         if (token !== loadToken) return; // user clicked something else meanwhile
@@ -602,7 +766,7 @@
                 loadTrack(index + 1, { autoAdvanceOnMiss: true });
                 return;
             }
-            viewport.innerHTML = '<div class="bx-viewport-msg">No media embed found in the first post. Hit Next ▶</div>';
+            viewport.innerHTML = `<div class="bx-viewport-msg">🕳️ No media in this thread<span style="font-size:0.8rem;color:#5b5b64;">It's a text post — hit ▶ Next or pick another track</span></div>`;
         }
 
         renderReactions(doc);
@@ -651,8 +815,11 @@
 
             cards.push(`
                 <div class="bx-comment-card">
-                    <div class="bx-comment-user">@${escapeHtml(username)}</div>
-                    <div>${escapeHtml(message)}</div>
+                    <span class="bx-avatar">${escapeHtml((username[0] || '?').toUpperCase())}</span>
+                    <div class="bx-comment-body">
+                        <div class="bx-comment-user">${escapeHtml(username)}</div>
+                        <div class="bx-comment-text">${escapeHtml(message)}</div>
+                    </div>
                 </div>
             `);
             if (cards.length >= MAX_REACTIONS) break;
@@ -660,7 +827,7 @@
 
         reactionsContainer.innerHTML = cards.length
             ? cards.join('')
-            : '<div class="bx-empty">No comments on this thread yet.</div>';
+            : emptyState('💬', 'No comments on this thread yet');
     }
 
     // ------------------------------------------------------------------
@@ -704,58 +871,65 @@
         if (currentIndex > 0) loadTrack(currentIndex - 1);
     }
 
+    function setChip(id, on) {
+        const el = document.getElementById(id);
+        el.classList.toggle('bx-toggled', on);
+        el.setAttribute('aria-pressed', String(on));
+    }
+
     function toggleAudioMode() {
         const on = playerRoot.classList.toggle('bx-audio-mode');
-        document.getElementById('bx-audio-btn').classList.toggle('bx-toggled', on);
+        setChip('bx-audio-btn', on);
     }
 
     function toggleShuffle() {
         settings.shuffle = !settings.shuffle;
         saveSettings();
-        document.getElementById('bx-shuffle-btn').classList.toggle('bx-toggled', settings.shuffle);
+        setChip('bx-shuffle-btn', settings.shuffle);
     }
 
     function toggleAutoplay() {
         settings.autoplay = !settings.autoplay;
         saveSettings();
-        document.getElementById('bx-autoplay-btn').classList.toggle('bx-toggled', settings.autoplay);
+        setChip('bx-autoplay-btn', settings.autoplay);
     }
 
     async function popOut() {
         const activeIframe = document.getElementById('bx-iframe-active');
-        if (!activeIframe) return;
+        if (!activeIframe) { toast('Play a track first, then pop it out.'); return; }
         if (window.documentPictureInPicture) {
             try {
                 const pipWindow = await window.documentPictureInPicture.requestWindow({ width: 480, height: 290 });
                 pipWindow.document.body.style.cssText = 'margin:0;background:#000;';
                 pipWindow.document.body.appendChild(activeIframe);
                 activeIframe.style.cssText = 'width:100%;height:100%;border:none;';
-                viewport.innerHTML = '<div class="bx-viewport-msg">Playing in pop-out window…</div>';
+                viewport.innerHTML = '<div class="bx-viewport-msg">Playing in the pop-out window</div>';
                 pipWindow.addEventListener('pagehide', () => {
                     viewport.innerHTML = '';
                     viewport.appendChild(activeIframe);
                 });
             } catch (err) {
                 console.error('BX Jukebox PiP error:', err);
+                toast('Pop-out was blocked by the browser.');
             }
         } else {
-            alert('Your browser lacks Document Picture-in-Picture. Tip: right-click the video twice and choose "Picture in picture", or use 🎧 Jukebox Mode to keep audio playing while you browse.');
+            toast('This browser lacks pop-out support — try "Audio only" to keep the track playing while you browse.');
         }
     }
 
     function openPlayer() {
         playerRoot.style.display = 'block';
         renderSectionOptions();
-        document.getElementById('bx-shuffle-btn').classList.toggle('bx-toggled', settings.shuffle);
-        document.getElementById('bx-autoplay-btn').classList.toggle('bx-toggled', settings.autoplay);
+        setChip('bx-shuffle-btn', settings.shuffle);
+        setChip('bx-autoplay-btn', settings.autoplay);
         loadSource(sectionSelect.value || '');
     }
 
     function closePlayer() {
         playerRoot.style.display = 'none';
         playerRoot.classList.remove('bx-audio-mode');
-        document.getElementById('bx-audio-btn').classList.remove('bx-toggled');
-        viewport.innerHTML = '<div class="bx-viewport-msg">Select a track to start the vibe</div>'; // stops audio
+        setChip('bx-audio-btn', false);
+        viewport.innerHTML = '<div class="bx-viewport-msg">Pick a track from the queue to start the vibe</div>'; // stops audio
         document.getElementById('bx-track-title').textContent = '';
         document.getElementById('bx-thread-link').style.display = 'none';
     }
@@ -772,9 +946,18 @@
     document.getElementById('bx-pip-btn').addEventListener('click', popOut);
     loadMoreBtn.addEventListener('click', loadMore);
     sectionSelect.addEventListener('change', () => loadSource(sectionSelect.value || ''));
-    document.getElementById('bx-search').addEventListener('input', (e) => {
+
+    searchInput.addEventListener('input', (e) => {
         searchQuery = e.target.value.trim();
+        searchClear.style.display = searchQuery ? 'block' : 'none';
         renderPlaylistUI();
+    });
+    searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        searchQuery = '';
+        searchClear.style.display = 'none';
+        renderPlaylistUI();
+        searchInput.focus();
     });
 
     document.addEventListener('keydown', (e) => {
