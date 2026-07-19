@@ -12,7 +12,8 @@ bxjukebox/
 ## Features
 
 - **📺 Theater overlay** — full-screen dark player launched from a floating button on any subforum page. Three panels: playlist, player, reactions.
-- **Playlist from the page** — scans the thread list and lazily pulls each thread's media embed (YouTube, Streamable, Vimeo, SoundCloud) from the first post: iframes, plain links, or raw URLs. The next track is **prefetched** so skipping is instant.
+- **Playlist from the page** — scans the thread list and lazily pulls each thread's media (YouTube, Streamable, Vimeo, SoundCloud) as iframes, plain links, or raw URLs. The next track is **prefetched** so skipping is instant.
+- **🎬 Every clip in the thread** — all videos/songs across all posts (OP *and* replies) are collected into a clip strip under the player; Next/Prev and autoplay walk through a thread's clips before moving to the next thread, and queue rows show an "N clips" badge.
 - **📁 Section switcher** — hop between Hip-Hop / Sports / News etc. from a dropdown without leaving the player (sections are auto-discovered from the page's `forumdisplay.php?f=` links).
 - **⤵ Load more** — follows the forum's pagination to append page 2, 3, … to the queue.
 - **🔥 Hot filter** — crowdsourced Jukebox: filters/sorts by thread Props (≥ 15, top 20; falls back to top-20-by-props).
