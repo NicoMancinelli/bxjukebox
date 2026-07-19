@@ -209,6 +209,31 @@
         }
         #bx-thread-link:hover { color: var(--bx-accent); }
 
+        /* ---- Clip strip (multiple media in one thread) --------------- */
+        #bx-media-strip {
+            display: none; margin-top: 12px; max-width: 860px;
+            align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center;
+        }
+        #bx-media-strip.bx-show { display: flex; }
+        .bx-clip-chip {
+            border: 1px solid var(--bx-border); background: var(--bx-card); color: var(--bx-muted);
+            border-radius: 999px; padding: 5px 12px; cursor: pointer;
+            font-size: 0.76rem; font-weight: 600; font-family: inherit;
+            display: inline-flex; align-items: center; gap: 6px;
+            transition: color .15s, border-color .15s, background .15s;
+        }
+        .bx-clip-chip:hover { color: var(--bx-text); background: var(--bx-card-hover); }
+        .bx-clip-chip.active {
+            color: #fff; border-color: rgba(255, 69, 0, 0.6); background: var(--bx-accent-soft);
+        }
+        .bx-clip-chip .bx-clip-num { color: var(--bx-faint); font-variant-numeric: tabular-nums; }
+        .bx-clip-chip.active .bx-clip-num { color: var(--bx-accent); }
+        .bx-clips-badge {
+            color: var(--bx-faint); font-size: 0.7rem; font-weight: 600; flex-shrink: 0;
+            border: 1px solid var(--bx-border); border-radius: 4px; padding: 1px 5px;
+        }
+        .bx-list-item.active .bx-clips-badge { color: var(--bx-muted); border-color: rgba(255,69,0,0.4); }
+
         /* ---- Transport + toggles ------------------------------------ */
         .bx-controls {
             margin-top: 22px; display: flex; gap: 10px; align-items: center;
@@ -327,9 +352,10 @@
     // ------------------------------------------------------------------
     // State
     // ------------------------------------------------------------------
-    let playlist = [];        // filtered view  { title, url, props, embedUrl|null|undefined }
+    let playlist = [];        // filtered view  { title, url, props, embeds: string[]|undefined }
     let fullPlaylist = [];    // unfiltered master list for the current source
     let currentIndex = -1;
+    let currentMediaIndex = 0; // which clip within the current thread is playing
     let hotMode = false;
     let searchQuery = '';
     let nextPageUrl = null;   // pagination cursor for "Load more"
@@ -419,35 +445,44 @@
         return null;
     }
 
-    // Find the best embed inside a thread's first post.
-    function extractEmbedFromThreadDoc(doc) {
-        const firstPost = doc.querySelector('.post_message, [id^="post_message_"]');
-        if (!firstPost) return null;
+    // Collect EVERY playable embed across all posts in a thread page.
+    // Returns a deduped array of embed URLs (may be empty).
+    const MAX_EMBEDS_PER_THREAD = 20;
+    function extractEmbedsFromThreadDoc(doc) {
+        const posts = [...new Set(doc.querySelectorAll('.post_message, [id^="post_message_"]'))];
+        const embeds = [];
+        const seen = new Set();
+        const push = (url) => {
+            if (url && !seen.has(url) && embeds.length < MAX_EMBEDS_PER_THREAD) {
+                seen.add(url);
+                embeds.push(url);
+            }
+        };
 
-        // 1. Real embeds already in the post
-        const iframe = firstPost.querySelector(
-            "iframe[src*='youtube'], iframe[src*='youtu.be'], iframe[src*='streamable'], iframe[src*='player.vimeo'], iframe[src*='w.soundcloud']"
-        );
-        if (iframe) {
-            const normalized = toEmbedUrl(iframe.src);
-            if (normalized) return normalized;
-            return iframe.src;
+        for (const post of posts) {
+            // 1. Real embeds already in the post
+            post.querySelectorAll(
+                "iframe[src*='youtube'], iframe[src*='youtu.be'], iframe[src*='streamable'], iframe[src*='player.vimeo'], iframe[src*='w.soundcloud']"
+            ).forEach((f) => push(toEmbedUrl(f.src) || f.src));
+
+            // 2. Plain links to media sites
+            post.querySelectorAll('a[href]').forEach((a) => push(toEmbedUrl(a.href)));
+
+            // 3. Raw URLs in text (last resort)
+            const matches = post.textContent.match(
+                /https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=[\w-]+|youtu\.be\/[\w-]+|streamable\.com\/[\w-]+|vimeo\.com\/\d+)/g
+            ) || [];
+            matches.forEach((m) => push(toEmbedUrl(m)));
         }
+        return embeds;
+    }
 
-        // 2. Plain links to media sites
-        const links = firstPost.querySelectorAll('a[href]');
-        for (const a of links) {
-            const embed = toEmbedUrl(a.href);
-            if (embed) return embed;
-        }
-
-        // 3. Raw URLs in text (last resort)
-        const m = firstPost.textContent.match(
-            /https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=[\w-]+|youtu\.be\/[\w-]+|streamable\.com\/[\w-]+|vimeo\.com\/\d+)/
-        );
-        if (m) return toEmbedUrl(m[0]);
-
-        return null;
+    function embedSourceName(url) {
+        if (/youtube|youtu\.be/.test(url)) return 'YouTube';
+        if (/streamable/.test(url)) return 'Streamable';
+        if (/vimeo/.test(url)) return 'Vimeo';
+        if (/soundcloud/.test(url)) return 'SoundCloud';
+        return 'Clip';
     }
 
     // ------------------------------------------------------------------
@@ -492,6 +527,7 @@
                 </div>
                 <h2 id="bx-track-title"></h2>
                 <a id="bx-thread-link" target="_blank" rel="noopener" style="display:none;">View original thread ↗</a>
+                <div id="bx-media-strip" role="tablist" aria-label="Media in this thread"></div>
                 <div class="bx-controls">
                     <button class="bx-icon-btn" id="bx-prev-btn" title="Previous (P)" aria-label="Previous">◀</button>
                     <button class="bx-icon-btn bx-primary" id="bx-next-btn" title="Next (N)" aria-label="Next">▶</button>
@@ -555,7 +591,7 @@
                     if (m) props = parseInt(m[1], 10) || 0;
                 }
             }
-            items.push({ title, url, props, embedUrl: undefined });
+            items.push({ title, url, props, embeds: undefined });
         });
 
         return items;
@@ -679,13 +715,14 @@
             const li = document.createElement('li');
             li.className = 'bx-list-item' +
                 (index === currentIndex ? ' active' : '') +
-                (track.embedUrl === null ? ' bx-no-media' : '');
+                (track.embeds && track.embeds.length === 0 ? ' bx-no-media' : '');
             li.dataset.index = index;
             if (q && !track.title.toLowerCase().includes(q)) li.style.display = 'none';
             else visible++;
             li.innerHTML = `
                 <span class="bx-idx">${index === currentIndex ? '▶' : index + 1}</span>
                 <span class="bx-track-title-text" title="${escapeHtml(track.title)}">${escapeHtml(track.title)}</span>
+                ${track.embeds && track.embeds.length > 1 ? `<span class="bx-clips-badge" title="${track.embeds.length} clips in this thread">${track.embeds.length} clips</span>` : ''}
                 ${track.props > 0 ? `<span class="bx-props-badge" title="${track.props} props">🔥 ${track.props}</span>` : ''}
             `;
             li.addEventListener('click', () => loadTrack(index));
@@ -721,6 +758,7 @@
     async function loadTrack(index, { autoAdvanceOnMiss = false } = {}) {
         if (index < 0 || index >= playlist.length) return;
         currentIndex = index;
+        currentMediaIndex = 0;
         const track = playlist[index];
         const token = ++loadToken;
         markActive();
@@ -730,11 +768,12 @@
         threadLink.href = track.url;
         threadLink.style.display = 'inline';
         reactionsContainer.innerHTML = REACTIONS_SKELETON;
+        renderMediaStrip(track);
 
-        // If the embed is already known (prefetched), render instantly and
+        // If the clips are already known (prefetched), render instantly and
         // fetch the thread only for the reactions drawer.
-        if (typeof track.embedUrl === 'string') {
-            renderEmbed(track.embedUrl);
+        if (Array.isArray(track.embeds) && track.embeds.length > 0) {
+            playMedia(0);
         } else {
             viewport.innerHTML = VIEWPORT_SKELETON;
         }
@@ -744,7 +783,7 @@
             html = await bxFetch(track.url);
         } catch (err) {
             if (token !== loadToken) return;
-            if (track.embedUrl === undefined) {
+            if (track.embeds === undefined) {
                 viewport.innerHTML = `<div class="bx-viewport-msg">⚠️ Couldn't load this thread<span style="font-size:0.8rem;color:#5b5b64;">${escapeHtml(err.message)}</span></div>`;
             }
             reactionsContainer.innerHTML = emptyState('💬', 'Chatter unavailable');
@@ -753,12 +792,15 @@
         if (token !== loadToken) return; // user clicked something else meanwhile
 
         const doc = new DOMParser().parseFromString(html, 'text/html');
-        if (track.embedUrl === undefined) {
-            track.embedUrl = extractEmbedFromThreadDoc(doc);
+        if (track.embeds === undefined) {
+            track.embeds = extractEmbedsFromThreadDoc(doc);
         }
 
-        if (typeof track.embedUrl === 'string') {
-            if (!document.getElementById('bx-iframe-active')) renderEmbed(track.embedUrl);
+        if (track.embeds.length > 0) {
+            renderMediaStrip(track);
+            if (!document.getElementById('bx-iframe-active')) playMedia(0);
+            renderPlaylistUI(); // surface the "N clips" badge
+            markActive();
         } else {
             renderPlaylistUI(); // grey out the no-media item
             markActive();
@@ -773,6 +815,39 @@
         prefetchTrack(index + 1);
     }
 
+    // Play clip `mediaIndex` of the current track's thread.
+    function playMedia(mediaIndex) {
+        const track = playlist[currentIndex];
+        if (!track || !Array.isArray(track.embeds)) return;
+        if (mediaIndex < 0 || mediaIndex >= track.embeds.length) return;
+        currentMediaIndex = mediaIndex;
+        renderEmbed(track.embeds[mediaIndex]);
+        renderMediaStrip(track);
+    }
+
+    // Chip strip listing every clip found in the thread (hidden for 0/1).
+    function renderMediaStrip(track) {
+        const strip = document.getElementById('bx-media-strip');
+        const embeds = Array.isArray(track?.embeds) ? track.embeds : [];
+        if (embeds.length < 2) {
+            strip.classList.remove('bx-show');
+            strip.innerHTML = '';
+            return;
+        }
+        strip.innerHTML = '';
+        embeds.forEach((url, i) => {
+            const chip = document.createElement('button');
+            chip.className = 'bx-clip-chip' + (i === currentMediaIndex ? ' active' : '');
+            chip.setAttribute('role', 'tab');
+            chip.setAttribute('aria-selected', String(i === currentMediaIndex));
+            chip.title = `Play clip ${i + 1} of ${embeds.length}`;
+            chip.innerHTML = `<span class="bx-clip-num">${i + 1}</span>${escapeHtml(embedSourceName(url))}`;
+            chip.addEventListener('click', () => playMedia(i));
+            strip.appendChild(chip);
+        });
+        strip.classList.add('bx-show');
+    }
+
     function renderEmbed(embedUrl) {
         const iframe = document.createElement('iframe');
         iframe.id = 'bx-iframe-active';
@@ -784,15 +859,15 @@
         hookYouTubeAutoAdvance(iframe);
     }
 
-    // Warm the next track's embed URL so Next ▶ is instant.
+    // Warm the next track's clip list so Next ▶ is instant.
     async function prefetchTrack(index) {
         const track = playlist[index];
-        if (!track || track.embedUrl !== undefined) return;
+        if (!track || track.embeds !== undefined) return;
         try {
             const html = await bxFetch(track.url);
-            if (track.embedUrl !== undefined) return;
+            if (track.embeds !== undefined) return;
             const doc = new DOMParser().parseFromString(html, 'text/html');
-            track.embedUrl = extractEmbedFromThreadDoc(doc);
+            track.embeds = extractEmbedsFromThreadDoc(doc);
         } catch (e) { /* best effort */ }
     }
 
@@ -859,6 +934,12 @@
     // ------------------------------------------------------------------
     function playNext(auto = false) {
         if (playlist.length === 0) return;
+        // Step through the remaining clips of the current thread first
+        const track = playlist[currentIndex];
+        if (track && Array.isArray(track.embeds) && currentMediaIndex < track.embeds.length - 1) {
+            playMedia(currentMediaIndex + 1);
+            return;
+        }
         if (settings.shuffle && playlist.length > 1) {
             let next;
             do { next = Math.floor(Math.random() * playlist.length); } while (next === currentIndex);
@@ -868,6 +949,11 @@
         }
     }
     function playPrev() {
+        // Step back through the current thread's clips first
+        if (currentMediaIndex > 0) {
+            playMedia(currentMediaIndex - 1);
+            return;
+        }
         if (currentIndex > 0) loadTrack(currentIndex - 1);
     }
 
@@ -932,6 +1018,9 @@
         viewport.innerHTML = '<div class="bx-viewport-msg">Pick a track from the queue to start the vibe</div>'; // stops audio
         document.getElementById('bx-track-title').textContent = '';
         document.getElementById('bx-thread-link').style.display = 'none';
+        const strip = document.getElementById('bx-media-strip');
+        strip.classList.remove('bx-show');
+        strip.innerHTML = '';
     }
 
     launchBtn.addEventListener('click', openPlayer);
